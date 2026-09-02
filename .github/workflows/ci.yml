@@ -17,7 +17,7 @@ jobs:
       install_command: npm ci
       quality_command: npm run typecheck
       build_command: npm run build
-      image_name: ghcr.io/devsecopslonghn/lol-analysis-frontend
+      image_name: ${{ vars.GHCR_REGISTRY }}/devsecopslonghn/lol-analysis-frontend
       publish_image: true
-      registry: ghcr.io
+      registry: ${{ vars.GHCR_REGISTRY }}
     secrets: inherit

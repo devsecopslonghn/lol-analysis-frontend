@@ -2,7 +2,7 @@ import { ChangeEvent, useEffect, useMemo, useState } from "react";
 
 type Json = Record<string, unknown>;
 type Side = "blue" | "red" | "unknown";
-type Route = "upload" | "summary" | "timeline" | "objectives" | "jungle" | "players" | "history";
+type Route = "upload" | "summary" | "timeline" | "objectives" | "jungle" | "players" | "history" | "coach";
 
 type Player = {
   player_id: string;
@@ -58,6 +58,14 @@ type Report = {
   capabilities?: Record<string, Capability>;
   analysis?: { facts?: Json[]; inferences?: unknown[]; unknowns?: string[]; method?: string };
 };
+type CoachAnalysis = {
+  player_id?: string;
+  player?: { game_name?: string; tag_line?: string };
+  baseline?: { matches?: number; wins?: number; losses?: number; win_rate?: number; sample_quality?: string; wins_features?: Record<string, number | null>; losses_features?: Record<string, number | null> };
+  recurring_mistakes?: Array<{ status?: string; label?: string; summary?: string; confidence?: string; comparison?: { wins?: number; losses?: number; delta?: number }; evidence?: string[] }>;
+  loss_paths?: Array<{ match_id?: string; headline?: string; steps?: Array<{ phase?: string; finding?: string; comparison?: { match?: number; win_baseline?: number }; evidence?: string[] }>; limitations?: string[] }>;
+  charts?: { win_loss_comparison?: { metrics?: Array<{ key?: string; label?: string; wins?: number | null; losses?: number | null }> }; history?: { series?: Array<Json> } };
+};
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api/v1";
 const nav: Array<{ id: Route; index: string; label: string; section: string }> = [
@@ -67,6 +75,7 @@ const nav: Array<{ id: Route; index: string; label: string; section: string }> =
   { id: "objectives", index: "04", label: "Objective windows", section: "ANALYSIS" },
   { id: "jungle", index: "05", label: "Jungle economy", section: "ANALYSIS" },
   { id: "players", index: "06", label: "Player reports", section: "ANALYSIS" },
+  { id: "coach", index: "07", label: "Personal coach", section: "ANALYSIS" },
   { id: "history", index: "08", label: "History", section: "TOOLS" },
 ];
 
@@ -142,6 +151,12 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [coachAnalysis, setCoachAnalysis] = useState<CoachAnalysis | null>(null);
+  const [coachToken, setCoachToken] = useState("");
+  const [riotName, setRiotName] = useState("");
+  const [riotTag, setRiotTag] = useState("VN2");
+  const [coachCount, setCoachCount] = useState("20");
+  const [collecting, setCollecting] = useState(false);
 
   async function loadReport(matchId: string) {
     const response = await fetch(`${API_BASE}/reports/${encodeURIComponent(matchId)}`);
@@ -174,6 +189,17 @@ function App() {
     } catch (err) { setError(err instanceof Error ? err.message : "Upload thất bại"); }
     finally { setUploading(false); }
   }
+  async function collectRiot() {
+    if (!riotName.trim() || !riotTag.trim() || !coachToken.trim()) { setError("Cần Riot ID, tagline và Collector Token để gọi collector."); return; }
+    setError(null); setCollecting(true);
+    try {
+      const response = await fetch(`${API_BASE}/riot/collect`, { method: "POST", headers: { "Content-Type": "application/json", "X-Collector-Token": coachToken }, body: JSON.stringify({ game_name: riotName.trim(), tag_line: riotTag.trim(), count: Math.min(100, Math.max(1, Number(coachCount) || 20)) }) });
+      const body = await response.json().catch(() => ({})) as Json;
+      if (!response.ok) throw new Error(label(body.detail, `Collector trả về HTTP ${response.status}`));
+      setCoachAnalysis(asRecord(body.analysis) as CoachAnalysis); setRoute("coach");
+    } catch (err) { setError(err instanceof Error ? err.message : "Không thể collect Riot history"); }
+    finally { setCollecting(false); }
+  }
   useEffect(() => { void loadReports(); }, []);
   useEffect(() => { try { localStorage.setItem("rofl_route", route); } catch { /* optional */ } window.scrollTo(0, 0); }, [route]);
 
@@ -184,7 +210,7 @@ function App() {
   return <div className="app-shell">
     <aside className="sidebar"><div className="brand"><span className="brand-mark">R</span><span><strong>ROFL Analyzer</strong><small>v0.5 · evidence first</small></span></div>
       {["REPLAY", "ANALYSIS", "TOOLS"].map((section) => <div className="nav-group" key={section}><span className="nav-label">{section}</span>{nav.filter((item) => item.section === section).map((item) => <button className={`nav-item ${route === item.id ? "active" : ""}`} key={item.id} onClick={() => setRoute(item.id)}><span>{item.index}</span>{item.label}</button>)}</div>)}
-      <div className="sidebar-footer"><span><i className="status-dot" /> Local parser ready</span><span>Replay-only mode</span><span>Riot API · not connected</span></div>
+      <div className="sidebar-footer"><span><i className="status-dot" /> Local parser ready</span><span>ROFL + Riot history</span><span>Riot key stays server-side</span></div>
     </aside>
     <main className="main-pane"><header className="page-header"><div><p className="eyebrow">ROFL ANALYSIS LAB</p><h1>{page?.label ?? "Replay analysis"}</h1><p className="subtitle">Dữ liệu trước, coaching sau. Mỗi kết luận phải truy về evidence.</p></div><label className="primary-button">{uploading ? "Đang phân tích…" : "Phân tích replay →"}<input type="file" accept=".rofl" onChange={upload} disabled={uploading} /></label></header>
       {error && <div className="alert">{error}</div>}
@@ -196,8 +222,18 @@ function App() {
       {route === "history" && <HistoryScreen reports={reports} onSelect={(id) => { void loadReport(id); setRoute("summary"); }} />}
       {route === "objectives" && <UnavailableScreen report={report} title="Objective windows" capability="objectives" />}
       {route === "jungle" && <JungleScreen report={report} />}
+      {route === "coach" && <CoachScreen analysis={coachAnalysis} riotName={riotName} riotTag={riotTag} count={coachCount} token={coachToken} collecting={collecting} onName={setRiotName} onTag={setRiotTag} onCount={setCoachCount} onToken={setCoachToken} onCollect={() => void collectRiot()} />}
     </main>
   </div>;
+}
+
+function CoachScreen({ analysis, riotName, riotTag, count, token, collecting, onName, onTag, onCount, onToken, onCollect }: { analysis: CoachAnalysis | null; riotName: string; riotTag: string; count: string; token: string; collecting: boolean; onName: (value: string) => void; onTag: (value: string) => void; onCount: (value: string) => void; onToken: (value: string) => void; onCollect: () => void }) {
+  const baseline = analysis?.baseline;
+  return <section className="coach-page"><section className="panel coach-form"><PanelHeading label="RIOT API · PERSONAL DATASET" title="Find your recurring loss pattern" note="Riot API key stays server-side. Token is sent only as an HTTP header." /><div className="coach-inputs"><label>Riot ID<input value={riotName} onChange={(event) => onName(event.target.value)} placeholder="Tên người chơi" /></label><label>Tagline<input value={riotTag} onChange={(event) => onTag(event.target.value)} placeholder="VN2" /></label><label>Matches<input type="number" min="1" max="100" value={count} onChange={(event) => onCount(event.target.value)} /></label><label>Collector token<input type="password" value={token} onChange={(event) => onToken(event.target.value)} placeholder="X-Collector-Token" /></label><button className="secondary-button" onClick={onCollect} disabled={collecting}>{collecting ? "Đang collect…" : "Collect & analyze →"}</button></div><p className="form-note">MVP phân tích ở cấp match: win/loss baseline, resource → combat → conversion → availability. Không suy diễn route, gank hay timestamp.</p></section>{analysis ? <><section className="coach-overview"><div className="coach-kpi"><span>PLAYER</span><strong>{label(analysis.player?.game_name, riotName)}#{label(analysis.player?.tag_line, riotTag)}</strong><small>{label(analysis.player_id)}</small></div><div className="coach-kpi"><span>MATCHES</span><strong>{formatNumber(baseline?.matches)}</strong><small>{formatNumber(baseline?.wins)}W · {formatNumber(baseline?.losses)}L</small></div><div className="coach-kpi"><span>WIN RATE</span><strong>{percent(baseline?.win_rate)}</strong><small>sample: {label(baseline?.sample_quality)}</small></div></section><section className="coach-grid"><section className="panel coach-chart"><PanelHeading label="PERSONAL BASELINE" title="Wins vs losses" note="Các số là trung bình của chính người chơi." /><ComparisonChart metrics={analysis.charts?.win_loss_comparison?.metrics ?? []} /></section><section className="panel mistake-panel"><PanelHeading label="RECURRING PATTERNS" title="Điểm cần sửa" />{analysis.recurring_mistakes?.length ? analysis.recurring_mistakes.map((item, index) => <article className="mistake" key={`${item.label}-${index}`}><div><strong>{label(item.label, "Pattern")}</strong><p>{label(item.summary)}</p></div><span className="mistake-meta">{label(item.status, "candidate")}<br />Δ {number(item.comparison?.delta).toFixed(2)}</span></article>) : <p className="muted">Chưa thấy chênh lệch đủ lớn; cần thêm match hoặc xem từng loss path.</p>}</section></section><section className="panel loss-panel"><PanelHeading label="LOSS PATHS" title="Đã đánh mất lợi thế như thế nào" note="Mỗi bước có đường dẫn evidence, không phải phán đoán theo KDA." />{analysis.loss_paths?.length ? analysis.loss_paths.map((path) => <article className="loss-path" key={path.match_id}><div className="loss-heading"><strong>{label(path.match_id)}</strong><span>{label(path.headline)}</span></div>{path.steps?.length ? <div className="loss-steps">{path.steps.map((step, index) => <div className="loss-step" key={`${step.phase}-${index}`}><b>{label(step.phase).toUpperCase()}</b><p>{label(step.finding)}</p><small>match {number(step.comparison?.match).toFixed(2)} · win baseline {number(step.comparison?.win_baseline).toFixed(2)}</small></div>)}</div> : <p className="muted">Không có deviation material so với baseline thắng.</p>}</article>) : <p className="muted">Chưa có trận thua trong dataset.</p>}</section></> : <EmptyState title="Chưa có personal dataset" body="Nhập Riot ID và Collector Token để dựng baseline cá nhân. Không cần ROFL cho bước này." />}</section>;
+}
+
+function ComparisonChart({ metrics }: { metrics: Array<{ key?: string; label?: string; wins?: number | null; losses?: number | null }> }) {
+  return <div className="coach-comparison">{metrics.map((metricItem) => { const wins = number(metricItem.wins); const losses = number(metricItem.losses); const max = Math.max(wins, losses, .0001); return <div className="coach-bar-row" key={metricItem.key}><label>{label(metricItem.label, metricItem.key)}</label><div><span className="win-fill" style={{ width: `${wins / max * 100}%` }} /><small>W {wins.toFixed(2)}</small></div><div><span className="loss-fill" style={{ width: `${losses / max * 100}%` }} /><small>L {losses.toFixed(2)}</small></div></div>; })}</div>;
 }
 
 function UploadScreen({ reports, onUpload, uploading, onSelect }: { reports: Array<{ match_id: string; game?: Report["game"] }>; onUpload: (event: ChangeEvent<HTMLInputElement>) => void; uploading: boolean; onSelect: (id: string) => void }) {

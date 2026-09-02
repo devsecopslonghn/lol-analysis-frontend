@@ -13,6 +13,7 @@ type Player = {
   gold: number;
   cs: number;
   jungle_cs: number;
+  jungle: { enemy_jungle_cs: number; own_jungle_cs: number };
   stats: {
     champion_damage: number;
     building_damage: number;
@@ -32,6 +33,7 @@ type Player = {
     structure_takedowns: number;
     epic_monster_takedowns: number;
     time_disconnected_seconds: number;
+    time_played_seconds: number;
   };
   impact?: {
     dimensions: {
@@ -57,11 +59,16 @@ type Team = {
   avg_level: number;
 };
 
+type TransportObservation = { opcode: number; hex: string; count: number; first_timestamp_seconds: number; last_timestamp_seconds: number };
+type Transport = { block_count: number; distinct_opcodes: number; first_timestamp_seconds: number | null; last_timestamp_seconds: number | null; opcode_observations: TransportObservation[] };
+
 type Report = {
   match_id: string;
   game: { patch: string; duration_seconds: number | null };
   teams: Team[];
   players: Player[];
+  transport: Transport;
+  movement: { status: string; transport_observations?: TransportObservation[] };
   capabilities: Record<string, { status: string; reason: string }>;
   analysis: { facts: Array<Record<string, unknown>>; inferences: unknown[]; unknowns: string[] };
 };
@@ -163,6 +170,13 @@ function App() {
             {report.teams.map((team) => <TeamCard team={team} key={team.team} />)}
           </section>
 
+          <section className="transport-strip">
+            <div><span className="label">TRANSPORT EVIDENCE</span><strong>{formatNumber(report.transport.block_count)} blocks</strong></div>
+            <div><span className="label">OPCODES</span><strong>{report.transport.distinct_opcodes} observed</strong></div>
+            <div><span className="label">MOVEMENT SIGNAL</span><strong>{formatNumber(report.transport.opcode_observations.find((item) => item.hex === "0x022c")?.count ?? 0)} × 0x022c</strong></div>
+            <div><span className="label">SEMANTIC</span><strong>{report.movement.status}</strong></div>
+          </section>
+
           <div className="capability-strip">
             {Object.entries(report.capabilities).map(([name, value]) => (
               <span className={`status status-${value.status}`} key={name}>{name}: {value.status}</span>
@@ -182,7 +196,7 @@ function App() {
             <ImpactPanel player={activePlayer} />
           </section>
 
-          <section className="panel next-panel"><div className="panel-heading"><div><span className="label">ANALYSIS CONTRACT</span><h2>Movement và event semantic</h2></div></div><p className="notice">MVP này không hiển thị tọa độ/gank/invade giả. Khi backend có patch profile verified, dashboard có thể thêm timeline, map route và objective windows mà không đổi contract player.</p></section>
+          <section className="panel next-panel"><div className="panel-heading"><div><span className="label">ANALYSIS CONTRACT</span><h2>Movement và event semantic</h2></div></div><p className="notice">Dashboard đã hiển thị transport evidence như `0x022c` và time window. Tọa độ, gank, invade và causal chain chỉ được mở khi backend có patch profile verified; contract player không cần đổi.</p></section>
         </>
       )}
     </main>
@@ -208,6 +222,8 @@ function PlayerDetail({ player }: { player: Player | null }) {
     ["Objective damage", formatNumber(player.stats.objective_damage)],
     ["Vision / wards", `${player.stats.vision_score} / ${player.stats.wards_placed}`],
     ["Takedowns before 15m", String(player.derived.takedowns_before_15m)],
+    ["Enemy / own jungle CS", `${player.jungle.enemy_jungle_cs} / ${player.jungle.own_jungle_cs}`],
+    ["Active / disconnected", `${formatDuration(player.derived.time_played_seconds - player.derived.time_disconnected_seconds)} / ${formatDuration(player.derived.time_disconnected_seconds)}`],
   ];
   return <aside className="panel detail"><div className="detail-heading"><span className={`dot ${player.side}`} /><div><span className="label">PLAYER</span><h2>{player.player}</h2><p>{player.champion} · {player.role} · {player.side}</p></div></div><div className="fact-grid">{facts.map(([key, value]) => <div className="fact" key={key}><span>{key}</span><strong>{value}</strong></div>)}</div><div className="detail-note"><strong>Impact evidence</strong><p>Report mới chỉ sử dụng metadata verified/derived. Movement, gank, invade và causal chain sẽ xuất hiện khi patch semantic được xác minh.</p></div></aside>;
 }
@@ -219,7 +235,7 @@ function ImpactPanel({ player }: { player: Player | null }) {
     ["Tempo", `${dimensions.tempo.takedowns_before_15m} takedowns trước 15m`, dimensions.tempo.takedowns_before_15m, 15],
     ["Combat", `${percent(dimensions.combat.kill_participation)} KP · ${percent(dimensions.combat.damage_share)} damage`, (dimensions.combat.kill_participation ?? 0) * 100, 100],
     ["Objective", `${dimensions.objective.epic_monster_takedowns} epic · ${dimensions.objective.structure_takedowns} structures`, dimensions.objective.epic_monster_takedowns, 8],
-    ["Map", `${dimensions.map.vision_score} vision · ${dimensions.map.wards_placed} wards`, dimensions.map.vision_score, 100],
+    ["Jungle", `${player.jungle.enemy_jungle_cs} enemy · ${player.jungle.own_jungle_cs} own CS`, player.jungle.enemy_jungle_cs, 50],
   ] as const;
   return <div className="signal-grid">{signals.map(([name, detail, value, max]) => <div className="signal" key={name}><div className="signal-title"><strong>{name}</strong><span>{detail}</span></div><div className="meter"><span style={{ width: `${Math.min(100, Math.max(4, (value / max) * 100))}%` }} /></div></div>)}</div>;
 }

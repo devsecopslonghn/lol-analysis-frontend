@@ -60,7 +60,8 @@ type Team = {
 };
 
 type TransportObservation = { opcode: number; hex: string; count: number; first_timestamp_seconds: number; last_timestamp_seconds: number };
-type Transport = { block_count: number; distinct_opcodes: number; first_timestamp_seconds: number | null; last_timestamp_seconds: number | null; opcode_observations: TransportObservation[] };
+type TransportArtifact = { file: string; opcodes: string[]; count: number; status: string; semantic_status: string };
+type Transport = { block_count: number; distinct_opcodes: number; first_timestamp_seconds: number | null; last_timestamp_seconds: number | null; opcode_observations: TransportObservation[]; artifacts?: TransportArtifact[]; legacy_profile_reference?: { status: string; profile_client_version: string; candidate_opcode: string; applies_to_client_version: boolean } };
 
 type Report = {
   match_id: string;
@@ -68,7 +69,7 @@ type Report = {
   teams: Team[];
   players: Player[];
   transport: Transport;
-  movement: { status: string; transport_observations?: TransportObservation[] };
+  movement: { status: string; transport_observations?: TransportObservation[]; transport_artifacts?: TransportArtifact[]; legacy_profile_reference?: Transport["legacy_profile_reference"] };
   capabilities: Record<string, { status: string; reason: string }>;
   analysis: { facts: Array<Record<string, unknown>>; inferences: unknown[]; unknowns: string[] };
 };
@@ -174,6 +175,7 @@ function App() {
             <div><span className="label">TRANSPORT EVIDENCE</span><strong>{formatNumber(report.transport.block_count)} blocks</strong></div>
             <div><span className="label">OPCODES</span><strong>{report.transport.distinct_opcodes} observed</strong></div>
             <div><span className="label">MOVEMENT SIGNAL</span><strong>{formatNumber(report.transport.opcode_observations.find((item) => item.hex === "0x022c")?.count ?? 0)} × 0x022c</strong></div>
+            <div><span className="label">LEGACY PROFILE</span><strong>{report.movement.legacy_profile_reference?.profile_client_version ?? "none"}</strong></div>
             <div><span className="label">SEMANTIC</span><strong>{report.movement.status}</strong></div>
           </section>
 
@@ -196,7 +198,7 @@ function App() {
             <ImpactPanel player={activePlayer} />
           </section>
 
-          <section className="panel next-panel"><div className="panel-heading"><div><span className="label">ANALYSIS CONTRACT</span><h2>Movement và event semantic</h2></div></div><p className="notice">Dashboard đã hiển thị transport evidence như `0x022c` và time window. Tọa độ, gank, invade và causal chain chỉ được mở khi backend có patch profile verified; contract player không cần đổi.</p></section>
+          <section className="panel next-panel"><div className="panel-heading"><div><span className="label">ANALYSIS CONTRACT</span><h2>Movement và event semantic</h2></div></div><p className="notice">`0x022c` đã có artifact theo timestamp để adapter tương lai đọc, nhưng vẫn là transport-only. Profile legacy {report.movement.legacy_profile_reference?.profile_client_version ?? "—"} chỉ là tham chiếu và không áp dụng cho patch hiện tại; tọa độ, gank, invade và causal chain chỉ được mở khi backend có exact profile verified.</p></section>
         </>
       )}
     </main>

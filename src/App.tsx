@@ -41,7 +41,8 @@ type Team = {
   [key: string]: unknown;
 };
 
-type Artifact = { status?: string; reason?: string; events?: unknown[]; segments?: unknown[]; [key: string]: unknown };
+type Artifact = { status?: string; reason?: string; warning?: string; events?: unknown[]; segments?: unknown[]; [key: string]: unknown };
+type Capability = { status?: string; reason?: string; warning?: string; profile_client_version?: string; target_client_version?: string; [key: string]: unknown };
 type TimelineEvent = Json;
 type Report = {
   match_id: string;
@@ -54,7 +55,7 @@ type Report = {
   timeline?: Artifact;
   objectives?: Artifact;
   movement: Artifact;
-  capabilities?: Record<string, { status?: string; reason?: string }>;
+  capabilities?: Record<string, Capability>;
   analysis?: { facts?: Json[]; inferences?: unknown[]; unknowns?: string[]; method?: string };
 };
 
@@ -85,6 +86,7 @@ const championIds: Record<string, number> = {
 function asRecord(value: unknown): Json { return value && typeof value === "object" && !Array.isArray(value) ? value as Json : {}; }
 function number(value: unknown, fallback = 0): number { return typeof value === "number" && Number.isFinite(value) ? value : fallback; }
 function label(value: unknown, fallback = "—"): string { return typeof value === "string" && value.trim() ? value : fallback; }
+function displayStatus(value: unknown): string { const status = label(value, "unknown"); return status === "candidate" ? "warning" : status; }
 function formatNumber(value: unknown): string { return new Intl.NumberFormat("vi-VN").format(number(value)); }
 function formatTime(value: unknown): string {
   if (value === null || value === undefined || value === "") return "—";
@@ -223,11 +225,17 @@ function Comparison({ blue, red }: { blue?: Team; red?: Team }) {
   return <div className="comparison">{rows.map(([name, left, right]) => { const max = Math.max(left, right, 1); return <div className="comparison-row" key={name}><strong>{left}</strong><span className="bar blue-bar"><i style={{ width: `${left / max * 100}%` }} /></span><label>{name}</label><span className="bar red-bar"><i style={{ width: `${right / max * 100}%` }} /></span><strong>{right}</strong></div>; })}</div>;
 }
 
+function LegacyWarning({ report }: { report: Report }) {
+  const legacy = report.capabilities?.legacy_profile;
+  if (!legacy || legacy.status !== "candidate") return null;
+  return <div className="legacy-warning"><strong>WARNING · LEGACY PROFILE FALLBACK</strong><p>Đang giữ profile {label(legacy.profile_client_version)} để đối chiếu replay {label(legacy.target_client_version, label(report.game.patch))}.</p><small>Profile cũ chỉ là candidate; không dùng để khẳng định tọa độ, route, gank hoặc causal event.</small></div>;
+}
+
 function Flags({ report }: { report: Report }) {
   const facts = report.analysis?.facts ?? [];
   const flags = facts.slice(0, 4).map((fact, index) => ({ title: label(fact.title ?? fact.summary ?? fact.type, `Evidence ${index + 1}`), body: label(fact.body ?? fact.reason ?? fact.description, "Derived from the replay report."), severity: label(fact.severity, "INFO").toUpperCase() }));
   if (!flags.length) { flags.push({ title: "Movement semantic đang được khóa", body: label(report.movement?.reason, "Patch adapter chưa đủ bằng chứng để suy luận route, gank hoặc causal chain."), severity: "WARNING" }); flags.push({ title: "Objective windows chưa được mở", body: label(report.objectives?.reason, "Chỉ hiển thị objective khi decoder patch-specific được xác minh."), severity: "INFO" }); }
-  return <section className="panel flags"><PanelHeading label="MACRO FLAGS" title="Điểm cần review" note="Natural language từ report; không chấm kỹ năng." />{flags.map((flag, index) => <article className={`flag-row ${flag.severity.toLowerCase()}`} key={`${flag.title}-${index}`}><span className="flag-severity">{flag.severity}</span><div><strong>{flag.title}</strong><p>{flag.body}</p></div><button className="ghost-button">View evidence →</button></article>)}</section>;
+  return <section className="panel flags"><LegacyWarning report={report} /><PanelHeading label="MACRO FLAGS" title="Điểm cần review" note="Natural language từ report; không chấm kỹ năng." />{flags.map((flag, index) => <article className={`flag-row ${flag.severity.toLowerCase()}`} key={`${flag.title}-${index}`}><span className="flag-severity">{flag.severity}</span><div><strong>{flag.title}</strong><p>{flag.body}</p></div><button className="ghost-button">View evidence →</button></article>)}</section>;
 }
 
 function PlayersScreen({ report, activePlayer, selectedPlayer, onSelect }: { report: Report | null; activePlayer: Player | null; selectedPlayer: string | null; onSelect: (id: string) => void }) {
@@ -261,12 +269,13 @@ function HistoryScreen({ reports, onSelect }: { reports: Array<{ match_id: strin
 
 function UnavailableScreen({ report, title, capability }: { report: Report | null; title: string; capability: string }) {
   const artifact = report?.[capability as "movement" | "objectives"];
-  return <section className="panel unsupported-page"><span className="large-icon">◌</span><h2>{title} chưa có dữ liệu semantic</h2><p>{label(artifact?.reason, "Report hiện chưa chứa artifact cho màn hình này.")}</p><small>UI đã sẵn sàng để render khi backend phát hành patch adapter verified.</small></section>;
+  const candidate = artifact?.status === "candidate";
+  return <section className="panel unsupported-page"><span className="large-icon">◌</span><h2>{title} chưa có dữ liệu semantic</h2><p>{label(artifact?.reason, "Report hiện chưa chứa artifact cho màn hình này.")}</p><small>{candidate ? "Legacy profile chỉ được dùng ở chế độ cảnh báo; cần adapter exact để mở semantic data." : "UI đã sẵn sàng để render khi backend phát hành patch adapter verified."}</small></section>;
 }
 
 function CapabilityGrid({ report }: { report: Report }) {
   const entries = Object.entries(report.capabilities ?? { movement: report.movement, objectives: report.objectives });
-  return <div className="capability-grid">{entries.map(([name, value]) => { const item = asRecord(value); const status = label(item.status, "unknown"); return <div className="capability" key={name}><span className={`status status-${status}`}><i />{status}</span><strong>{name.replaceAll("_", " ")}</strong><p>{label(item.reason, "No reason supplied")}</p></div>; })}</div>;
+  return <div className="capability-grid">{entries.map(([name, value]) => { const item = asRecord(value); const status = displayStatus(item.status); return <div className="capability" key={name}><span className={`status status-${status}`}><i />{status}</span><strong>{name.replaceAll("_", " ")}</strong><p>{label(item.reason, "No reason supplied")}</p></div>; })}</div>;
 }
 
 function PlayerRow({ player, patch, active, onClick }: { player: Player; patch?: string; active: boolean; onClick: () => void }) {

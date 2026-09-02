@@ -188,6 +188,7 @@ function App() {
     </aside>
     <main className="main-pane"><header className="page-header"><div><p className="eyebrow">ROFL ANALYSIS LAB</p><h1>{page?.label ?? "Replay analysis"}</h1><p className="subtitle">Dữ liệu trước, coaching sau. Mỗi kết luận phải truy về evidence.</p></div><label className="primary-button">{uploading ? "Đang phân tích…" : "Phân tích replay →"}<input type="file" accept=".rofl" onChange={upload} disabled={uploading} /></label></header>
       {error && <div className="alert">{error}</div>}
+      {report && <LegacyWarning report={report} />}
       {route === "upload" && <UploadScreen reports={reports} onUpload={upload} uploading={uploading} onSelect={(id) => void loadReport(id)} />}
       {route === "summary" && <SummaryScreen report={report} reports={reports} activePlayer={activePlayer} selectedPlayer={selectedPlayer} onSelectPlayer={setSelectedPlayer} onSelectReport={(id) => void loadReport(id)} onNavigate={setRoute} />}
       {route === "timeline" && <TimelineScreen report={report} />}
@@ -235,7 +236,7 @@ function Flags({ report }: { report: Report }) {
   const facts = report.analysis?.facts ?? [];
   const flags = facts.slice(0, 4).map((fact, index) => ({ title: label(fact.title ?? fact.summary ?? fact.type, `Evidence ${index + 1}`), body: label(fact.body ?? fact.reason ?? fact.description, "Derived from the replay report."), severity: label(fact.severity, "INFO").toUpperCase() }));
   if (!flags.length) { flags.push({ title: "Movement semantic đang được khóa", body: label(report.movement?.reason, "Patch adapter chưa đủ bằng chứng để suy luận route, gank hoặc causal chain."), severity: "WARNING" }); flags.push({ title: "Objective windows chưa được mở", body: label(report.objectives?.reason, "Chỉ hiển thị objective khi decoder patch-specific được xác minh."), severity: "INFO" }); }
-  return <section className="panel flags"><LegacyWarning report={report} /><PanelHeading label="MACRO FLAGS" title="Điểm cần review" note="Natural language từ report; không chấm kỹ năng." />{flags.map((flag, index) => <article className={`flag-row ${flag.severity.toLowerCase()}`} key={`${flag.title}-${index}`}><span className="flag-severity">{flag.severity}</span><div><strong>{flag.title}</strong><p>{flag.body}</p></div><button className="ghost-button">View evidence →</button></article>)}</section>;
+  return <section className="panel flags"><PanelHeading label="MACRO FLAGS" title="Điểm cần review" note="Natural language từ report; không chấm kỹ năng." />{flags.map((flag, index) => <article className={`flag-row ${flag.severity.toLowerCase()}`} key={`${flag.title}-${index}`}><span className="flag-severity">{flag.severity}</span><div><strong>{flag.title}</strong><p>{flag.body}</p></div><button className="ghost-button">View evidence →</button></article>)}</section>;
 }
 
 function PlayersScreen({ report, activePlayer, selectedPlayer, onSelect }: { report: Report | null; activePlayer: Player | null; selectedPlayer: string | null; onSelect: (id: string) => void }) {
